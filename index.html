@@ -31,6 +31,7 @@ input:focus,select:focus{border-color:var(--accent)}
 .prod{border:1px solid var(--line);border-radius:14px;padding:12px;margin-bottom:10px}
 .prod .top{display:flex;gap:8px;align-items:center;margin-bottom:10px}
 .prod .top input{font-weight:600}
+.ex{display:grid;grid-template-columns:1fr 1fr 34px;gap:8px;margin-bottom:8px;align-items:center}
 .x{flex:none;width:34px;height:34px;border-radius:10px;border:0;background:var(--field);color:var(--mute);font-size:18px;cursor:pointer}
 .x:hover{color:var(--warn)}
 .row3{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
@@ -49,7 +50,7 @@ button.btn.primary{background:var(--accent);color:#fff}
 .story.bad{background:var(--warn-soft)}
 .story p{margin:0 0 8px} .story p:last-child{margin:0}
 .tablewrap{overflow-x:auto;margin:0 -4px}
-table{border-collapse:collapse;width:100%;min-width:980px;font-size:13px}
+table{border-collapse:collapse;width:100%;min-width:1080px;font-size:13px}
 th,td{text-align:right;padding:9px 8px;border-bottom:1px solid var(--line);white-space:nowrap}
 th{font-size:11px;text-transform:uppercase;letter-spacing:.04em;color:var(--mute);font-weight:600}
 th:first-child,td:first-child{text-align:left}
@@ -102,6 +103,19 @@ td.pos{color:var(--accent);font-weight:600} td.neg{color:var(--warn);font-weight
       </div>
 
       <div class="card">
+        <h2>3 · Costos mensuales</h2>
+        <div class="row2">
+          <div class="field"><label>Premio mensual</label><input id="premio" type="number" min="0" step="any" inputmode="decimal" placeholder="0"></div>
+          <div class="field"><label>Cuota mensual del préstamo (opcional)</label><input id="cuota" type="number" min="0" step="any" inputmode="decimal" placeholder="0"></div>
+        </div>
+        <div class="field"><label>Cuotas que te faltan por pagar (vacío = todo el período)</label><input id="cuotasN" type="number" min="0" step="1" inputmode="numeric" placeholder="Ej: 12"></div>
+        <label>Costos adicionales al mes (luz, arriendo, nómina, etc.)</label>
+        <div id="extras"></div>
+        <button class="btn" id="addExtra">+ Agregar costo</button>
+        <p class="info" id="fixedInfo"></p>
+      </div>
+
+      <div class="card">
         <h2>Guardar y compartir</h2>
         <div class="actions">
           <button class="btn" id="exportJson">Descargar respaldo</button>
@@ -125,6 +139,7 @@ td.pos{color:var(--accent);font-weight:600} td.neg{color:var(--warn);font-weight
       <div class="card">
         <h2>Recompra ciclo a ciclo</h2>
         <div class="tablewrap"><table id="tbl"></table></div>
+        <p class="story bad" id="stopNote" style="display:none;margin-top:12px"></p>
         <p class="note">En cada ciclo se compra la misma mezcla de productos, en la proporción de tu primer lote, con todo el dinero disponible (unidades enteras; lo que sobra pasa al siguiente ciclo).</p>
       </div>
 
@@ -145,7 +160,7 @@ const DEFAULT = {
     {name:'Producto A', cost:25000, price:60000, units:20},
     {name:'Producto B', cost:15000, price:40000, units:10}
   ],
-  shipUnit:3000, perSale:0, daily:5, reinv:100, cycles:6, goal:''
+  shipUnit:3000, premio:0, cuota:0, cuotasN:'', extras:[{name:'Arriendo',amount:0},{name:'Luz',amount:0},{name:'Nómina',amount:0}], perSale:0, daily:5, reinv:100, cycles:6, goal:''
 };
 let S = load();
 
@@ -175,12 +190,18 @@ const pct = n => isFinite(n) ? (n*100).toLocaleString('es-CO',{maximumFractionDi
 const esc = s => String(s).replace(/[&<>"]/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 
 /* ---------- Simulación ---------- */
+function monthlyFixed(){
+  return num(S.premio) + (S.extras||[]).reduce((a,e)=>a+num(e.amount),0);
+}
 function simulate(n){
   const P = S.products.map(p=>({name:p.name||'Producto', cost:num(p.cost), price:num(p.price), units:Math.max(0,Math.floor(num(p.units)))}));
   const U1 = P.reduce((a,p)=>a+p.units,0);
   const prodCost1 = P.reduce((a,p)=>a+p.cost*p.units,0);
   const shipU = num(S.shipUnit), perSale = num(S.perSale), daily = num(S.daily);
   const reinv = Math.min(100,Math.max(0,num(S.reinv)))/100;
+  const monthly = monthlyFixed();
+  const loan = num(S.cuota);
+  const loanN = num(S.cuotasN)>0 ? Math.floor(num(S.cuotasN)) : Infinity;
   const out = [];
   if(U1===0) return out;
   let cash = prodCost1 + shipU*U1, cum = 0, day = 0;
@@ -199,18 +220,23 @@ function simulate(n){
     const cost = prodCost + shipK;
     if(k>1 && cost>cash+1e-6) break;
     const revenue = P.reduce((a,p,i)=>a+p.price*units[i],0) - perSale*total;
-    const profit = revenue - cost;
+    let fixed = 0;
+    if(daily>0 && (monthly>0 || loan>0)){
+      const end = day + total/daily;
+      fixed = monthly*(total/daily)/30 + loan*(Math.min(Math.floor(end/30),loanN) - Math.min(Math.floor(day/30),loanN));
+    }
+    const profit = revenue - cost - fixed;
     const netUnit = revenue/total;
     const be = netUnit>0 ? Math.ceil(cost/netUnit - 1e-9) : Infinity;
     const leftover = cash - cost;
-    const endCash = leftover + revenue;
+    const endCash = leftover + revenue - fixed;
     const withdraw = profit>0 ? profit*(1-reinv) : 0;
     const next = endCash - withdraw;
     cum += profit;
     const days = daily>0 ? total/daily : null;
     const beDays = daily>0 && be<=total ? be/daily : null;
     if(days!==null) day += days;
-    out.push({k, capital:cash, units, total, cost, shipK, revenue, profit, roi:cost>0?profit/cost:0,
+    out.push({k, capital:cash, units, total, cost, shipK, revenue, fixed, profit, roi:cost>0?profit/cost:0,
               be: be<=total ? be : null, days, beDays, day: daily>0 ? day : null, leftover, endCash, withdraw, next, cum, names:P.map(p=>p.name)});
     cash = next;
     if(!isFinite(cash) || cash>1e15) break;
@@ -237,7 +263,22 @@ function renderProducts(){
     el.appendChild(d);
   });
 }
+function updateFixedInfo(){
+  const m = monthlyFixed(), c = num(S.cuota);
+  let t = `Total mensual: <b>${money(m+c)}</b> (costos ${money(m)}${c>0?' + cuota '+money(c):''}).`;
+  if((m>0||c>0) && !(num(S.daily)>0)) t += ' <b style="color:var(--warn)">Escribe tus ventas diarias para que se descuenten de la ganancia.</b>';
+  document.getElementById('fixedInfo').innerHTML = t;
+}
+function renderExtras(){
+  const el = $('extras'); el.innerHTML='';
+  (S.extras||[]).forEach((e,i)=>{
+    const d = document.createElement('div'); d.className='ex';
+    d.innerHTML = `<input data-xi="${i}" data-xf="name" value="${esc(e.name)}" placeholder="Concepto"><input type="number" min="0" step="any" inputmode="decimal" data-xi="${i}" data-xf="amount" value="${e.amount||''}" placeholder="0"><button class="x" data-xdel="${i}" title="Quitar" aria-label="Quitar costo">×</button>`;
+    el.appendChild(d);
+  });
+}
 function updateProdInfo(){
+  updateFixedInfo();
   const ship = num(S.shipUnit);
   S.products.forEach((p,i)=>{
     const el = $('pi'+i); if(!el) return;
@@ -249,7 +290,7 @@ function updateProdInfo(){
 }
 function fillSettings(){
   $('currency').value = S.currency; $('shipUnit').value = S.shipUnit;
-  $('perSale').value = S.perSale||''; $('daily').value = S.daily||''; $('reinv').value = S.reinv; $('cycles').value = S.cycles; $('goal').value = S.goal;
+  $('perSale').value = S.perSale||''; $('premio').value = S.premio||''; $('cuota').value = S.cuota||''; $('cuotasN').value = S.cuotasN; $('daily').value = S.daily||''; $('reinv').value = S.reinv; $('cycles').value = S.cycles; $('goal').value = S.goal;
 }
 
 /* ---------- Render resultados ---------- */
@@ -269,6 +310,7 @@ function renderResults(){
   k.innerHTML = `
     <div class="kpi"><span>Inversión (con envío)</span><b>${money(r.cost)}</b></div>
     <div class="kpi"><span>Ingreso si vendes todo</span><b>${money(r.revenue)}</b></div>
+    ${r.fixed>0?`<div class="kpi"><span>Costos fijos del lote</span><b>${money(r.fixed)}</b></div>`:''}
     <div class="kpi ${good?'good':'bad'}"><span>Ganancia neta</span><b>${money(r.profit)}</b></div>
     <div class="kpi ${good?'good':'bad'}"><span>Retorno (ROI)</span><b>${pct(r.roi)}</b></div>
     <div class="kpi"><span>Unidades compradas</span><b>${int(r.total)}</b></div>
@@ -284,6 +326,7 @@ function renderResults(){
     st.className='story';
     html = `<p>Necesitas vender <b>${int(r.be)} de ${int(r.total)} unidades</b> (${pct(r.be/r.total)} del lote) para recuperar los ${money(r.cost)} invertidos y poder volver a comprar.</p>`;
     if(r.beDays!==null) html += `<p>A ${int(num(S.daily))===num(S.daily)?int(num(S.daily)):num(S.daily).toLocaleString('es-CO')} ventas por día, recuperas la inversión en <b>${dias(r.beDays)}</b> y vendes todo el lote en <b>${dias(r.days)}</b>.</p>`;
+    if(r.fixed>0) html += `<p>Durante esos ${dias(r.days)} pagas <b>${money(r.fixed)}</b> en costos fijos (premio, cuota y adicionales); la ganancia neta ya los descuenta.</p>`;
     if(r.total-r.be>0) html += `<p>Las otras <b>${int(r.total-r.be)} unidades</b> son ganancia pura.</p>`;
     if(rows[1]){
       const q = rows[1];
@@ -293,16 +336,19 @@ function renderResults(){
   st.innerHTML = html;
 
   // tabla
-  let t = `<thead><tr><th>Ciclo</th><th>Capital</th><th>Unidades</th><th>Inversión</th><th>Ingreso</th><th>Ganancia</th><th>Vender p/ recuperar</th><th>Capital siguiente</th><th>Ganancia acum.</th><th>Duración</th><th>Día fin</th><th style="text-align:left">Compras por producto</th></tr></thead><tbody>`;
+  let t = `<thead><tr><th>Ciclo</th><th>Capital</th><th>Unidades</th><th>Inversión</th><th>Ingreso</th><th>Costos fijos</th><th>Ganancia neta</th><th>Vender p/ recuperar</th><th>Capital siguiente</th><th>Ganancia acum.</th><th>Duración</th><th>Día fin</th><th style="text-align:left">Compras por producto</th></tr></thead><tbody>`;
   rows.forEach(c=>{
     const mix = c.units.map((u,i)=>`${esc(c.names[i])} ×${int(u)}`).join(' · ');
-    t += `<tr><td>${c.k}</td><td>${money(c.capital)}</td><td>${int(c.total)}</td><td>${money(c.cost)}</td><td>${money(c.revenue)}</td>
+    t += `<tr><td>${c.k}</td><td>${money(c.capital)}</td><td>${int(c.total)}</td><td>${money(c.cost)}</td><td>${money(c.revenue)}</td><td>${money(c.fixed)}</td>
       <td class="${c.profit>=0?'pos':'neg'}">${money(c.profit)}</td><td>${c.be===null?'—':int(c.be)+' uds'}</td>
       <td>${money(c.next)}</td><td>${money(c.cum)}</td><td>${dias(c.days)}</td><td>${c.day===null?'—':'Día '+Math.ceil(c.day)}</td><td class="mix">${mix}</td></tr>`;
   });
   $('tbl').innerHTML = t + '</tbody>';
 
   chart(rows);
+  const tn = document.getElementById('stopNote');
+  tn.style.display = rows.length<n ? 'block' : 'none';
+  tn.textContent = rows.length<n ? `El cálculo se detiene en el ciclo ${rows.length}: después de pagar los costos, el dinero no alcanza para otra compra.` : '';
 
   // meta
   const gm = $('goalMsg'), goal = num(S.goal);
@@ -340,12 +386,24 @@ $('prods').addEventListener('click', e=>{
   const b = e.target.closest('[data-del]'); if(!b) return;
   S.products.splice(+b.dataset.del,1); save(); renderProducts(); renderResults();
 });
+$('extras').addEventListener('input', e=>{
+  const t=e.target, i=t.dataset.xi; if(i===undefined) return;
+  S.extras[i][t.dataset.xf]=t.value; save(); renderResults();
+});
+$('extras').addEventListener('click', e=>{
+  const b=e.target.closest('[data-xdel]'); if(!b) return;
+  S.extras.splice(+b.dataset.xdel,1); save(); renderExtras(); renderResults();
+});
+$('addExtra').onclick = ()=>{
+  S.extras.push({name:'',amount:0}); save(); renderExtras(); renderResults();
+  const ins=$('extras').querySelectorAll('input[data-xf="name"]'); ins[ins.length-1].focus();
+};
 $('addProd').onclick = ()=>{
   S.products.push({name:'Producto '+(S.products.length+1), cost:0, price:0, units:0});
   save(); renderProducts(); renderResults();
   const ins = $('prods').querySelectorAll('input[data-f="name"]'); ins[ins.length-1].focus();
 };
-[['currency','currency'],['shipUnit','shipUnit'],['perSale','perSale'],['daily','daily'],['reinv','reinv'],['cycles','cycles'],['goal','goal']]
+[['currency','currency'],['shipUnit','shipUnit'],['perSale','perSale'],['premio','premio'],['cuota','cuota'],['cuotasN','cuotasN'],['daily','daily'],['reinv','reinv'],['cycles','cycles'],['goal','goal']]
  .forEach(([id,key])=>{ $(id).addEventListener('input', e=>{ S[key]=e.target.value; save(); renderResults(); }); });
 
 function download(name, text, type){
@@ -363,7 +421,7 @@ $('file').onchange = e=>{
     try{
       const d = JSON.parse(rd.result);
       if(!Array.isArray(d.products)) throw 0;
-      S = Object.assign({}, DEFAULT, d); save(); fillSettings(); renderProducts(); renderResults();
+      S = Object.assign({}, DEFAULT, d); save(); fillSettings(); renderProducts(); renderExtras(); renderResults();
     }catch(err){ alert('El archivo no es un respaldo válido.'); }
   };
   rd.readAsText(f); e.target.value='';
@@ -371,10 +429,10 @@ $('file').onchange = e=>{
 $('exportCsv').onclick = ()=>{
   const n = Math.min(36,Math.max(1,Math.floor(num(S.cycles))||1));
   const rows = simulate(n);
-  const h = ['Ciclo','Capital','Unidades','Inversion','Ingreso','Ganancia','ROI','Vender para recuperar','Capital siguiente','Ganancia acumulada','Dias del ciclo','Dia de cierre','Compras por producto'];
+  const h = ['Ciclo','Capital','Unidades','Inversion','Ingreso','Costos fijos','Ganancia neta','ROI','Vender para recuperar','Capital siguiente','Ganancia acumulada','Dias del ciclo','Dia de cierre','Compras por producto'];
   const q = v => '"'+String(v).replace(/"/g,'""')+'"';
   const lines = [h.map(q).join(',')].concat(rows.map(c=>[
-    c.k, Math.round(c.capital), c.total, Math.round(c.cost), Math.round(c.revenue), Math.round(c.profit),
+    c.k, Math.round(c.capital), c.total, Math.round(c.cost), Math.round(c.revenue), Math.round(c.fixed), Math.round(c.profit),
     (c.roi*100).toFixed(1)+'%', c.be===null?'':c.be, Math.round(c.next), Math.round(c.cum), c.days===null?'':c.days.toFixed(1), c.day===null?'':Math.ceil(c.day),
     c.units.map((u,i)=>c.names[i]+' x'+u).join(' | ')
   ].map(q).join(',')));
@@ -382,11 +440,11 @@ $('exportCsv').onclick = ()=>{
 };
 $('reset').onclick = ()=>{
   if(!confirm('¿Borrar todos los datos y empezar de cero?')) return;
-  S = JSON.parse(JSON.stringify(DEFAULT)); S.products=[{name:'Producto 1',cost:0,price:0,units:0}]; S.shipUnit=0;
-  save(); fillSettings(); renderProducts(); renderResults();
+  S = JSON.parse(JSON.stringify(DEFAULT)); S.products=[{name:'Producto 1',cost:0,price:0,units:0}]; S.shipUnit=0; S.extras=[{name:'Arriendo',amount:0},{name:'Luz',amount:0},{name:'Nómina',amount:0}];
+  save(); fillSettings(); renderProducts(); renderExtras(); renderResults();
 };
 
-fillSettings(); renderProducts(); renderResults();
+fillSettings(); renderProducts(); renderExtras(); renderResults();
 </script>
 </body>
 </html>
