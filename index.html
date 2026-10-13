@@ -105,10 +105,14 @@ td.pos{color:var(--accent);font-weight:600} td.neg{color:var(--warn);font-weight
       <div class="card">
         <h2>3 · Costos mensuales</h2>
         <div class="row2">
-          <div class="field"><label>Premio mensual</label><input id="premio" type="number" min="0" step="any" inputmode="decimal" placeholder="0"></div>
-          <div class="field"><label>Cuota mensual del préstamo (opcional)</label><input id="cuota" type="number" min="0" step="any" inputmode="decimal" placeholder="0"></div>
+          <div class="field"><label>Premio mensual (monto)</label><input id="premio" type="number" min="0" step="any" inputmode="decimal" placeholder="0"></div>
+          <div class="field"><label>TyC: venta mínima del mes para entregarlo</label><input id="premioMin" type="number" min="0" step="any" inputmode="decimal" placeholder="Ej: 5000000"></div>
         </div>
-        <div class="field"><label>Cuotas que te faltan por pagar (vacío = todo el período)</label><input id="cuotasN" type="number" min="0" step="1" inputmode="numeric" placeholder="Ej: 12"></div>
+        <p class="info" style="margin:-4px 0 12px">El premio se paga al cierre de cada mes (30 días) solo si el total vendido ese mes alcanza la venta mínima. Vacío = se entrega siempre.</p>
+        <div class="row2">
+          <div class="field"><label>Cuota mensual del préstamo (opcional)</label><input id="cuota" type="number" min="0" step="any" inputmode="decimal" placeholder="0"></div>
+          <div class="field"><label>Cuotas que faltan (vacío = siempre)</label><input id="cuotasN" type="number" min="0" step="1" inputmode="numeric" placeholder="Ej: 12"></div>
+        </div>
         <label>Costos adicionales al mes (luz, arriendo, nómina, etc.)</label>
         <div id="extras"></div>
         <button class="btn" id="addExtra">+ Agregar costo</button>
@@ -143,6 +147,12 @@ td.pos{color:var(--accent);font-weight:600} td.neg{color:var(--warn);font-weight
         <p class="note">En cada ciclo se compra la misma mezcla de productos, en la proporción de tu primer lote, con todo el dinero disponible (unidades enteras; lo que sobra pasa al siguiente ciclo).</p>
       </div>
 
+      <div class="card" id="premioCard" style="display:none">
+        <h2>Premio mensual: ¿se entrega?</h2>
+        <div class="tablewrap"><table id="premioTbl" style="min-width:520px"></table></div>
+        <p class="note" id="premioNote"></p>
+      </div>
+
       <div class="card">
         <h2>Capital al terminar cada ciclo</h2>
         <div id="chart"></div>
@@ -160,7 +170,7 @@ const DEFAULT = {
     {name:'Producto A', cost:25000, price:60000, units:20},
     {name:'Producto B', cost:15000, price:40000, units:10}
   ],
-  shipUnit:3000, premio:0, cuota:0, cuotasN:'', extras:[{name:'Arriendo',amount:0},{name:'Luz',amount:0},{name:'Nómina',amount:0}], perSale:0, daily:5, reinv:100, cycles:6, goal:''
+  shipUnit:3000, premio:0, premioMin:'', cuota:0, cuotasN:'', extras:[{name:'Arriendo',amount:0},{name:'Luz',amount:0},{name:'Nómina',amount:0}], perSale:0, daily:5, reinv:100, cycles:6, goal:''
 };
 let S = load();
 
@@ -191,7 +201,7 @@ const esc = s => String(s).replace(/[&<>"]/g, c=>({'&':'&amp;','<':'&lt;','>':'&
 
 /* ---------- Simulación ---------- */
 function monthlyFixed(){
-  return num(S.premio) + (S.extras||[]).reduce((a,e)=>a+num(e.amount),0);
+  return (S.extras||[]).reduce((a,e)=>a+num(e.amount),0);
 }
 function simulate(n){
   const P = S.products.map(p=>({name:p.name||'Producto', cost:num(p.cost), price:num(p.price), units:Math.max(0,Math.floor(num(p.units)))}));
@@ -200,9 +210,11 @@ function simulate(n){
   const shipU = num(S.shipUnit), perSale = num(S.perSale), daily = num(S.daily);
   const reinv = Math.min(100,Math.max(0,num(S.reinv)))/100;
   const monthly = monthlyFixed();
-  const loan = num(S.cuota);
+  const loan = num(S.cuota), premio = num(S.premio), premioMin = num(S.premioMin);
+  const salesM = {}, months = [];
   const loanN = num(S.cuotasN)>0 ? Math.floor(num(S.cuotasN)) : Infinity;
   const out = [];
+  out.months = months;
   if(U1===0) return out;
   let cash = prodCost1 + shipU*U1, cum = 0, day = 0;
   for(let k=1;k<=n;k++){
@@ -220,10 +232,21 @@ function simulate(n){
     const cost = prodCost + shipK;
     if(k>1 && cost>cash+1e-6) break;
     const revenue = P.reduce((a,p,i)=>a+p.price*units[i],0) - perSale*total;
-    let fixed = 0;
-    if(daily>0 && (monthly>0 || loan>0)){
-      const end = day + total/daily;
-      fixed = monthly*(total/daily)/30 + loan*(Math.min(Math.floor(end/30),loanN) - Math.min(Math.floor(day/30),loanN));
+    let fixed = 0, premioPaid = 0;
+    if(daily>0){
+      const d0 = total/daily, end = day + d0, E = 1e-9;
+      const gross = P.reduce((a,p,i)=>a+p.price*units[i],0), rate = gross/d0;
+      const m0 = Math.floor(day/30+E), m1 = Math.floor(end/30+E);
+      for(let m=m0; m<Math.ceil(end/30-E); m++){
+        const ov = Math.min(end,30*(m+1)) - Math.max(day,30*m);
+        if(ov>0) salesM[m] = (salesM[m]||0) + rate*ov;
+      }
+      for(let m=m0; m<m1; m++){
+        const ok = premio>0 && (salesM[m]||0) >= premioMin - 1e-6;
+        if(ok) premioPaid += premio;
+        months.push({m:m+1, sales:salesM[m]||0, ok});
+      }
+      fixed = monthly*d0/30 + loan*(Math.min(Math.floor(end/30+E),loanN) - Math.min(Math.floor(day/30+E),loanN)) + premioPaid;
     }
     const profit = revenue - cost - fixed;
     const netUnit = revenue/total;
@@ -236,7 +259,7 @@ function simulate(n){
     const days = daily>0 ? total/daily : null;
     const beDays = daily>0 && be<=total ? be/daily : null;
     if(days!==null) day += days;
-    out.push({k, capital:cash, units, total, cost, shipK, revenue, fixed, profit, roi:cost>0?profit/cost:0,
+    out.push({k, capital:cash, units, total, cost, shipK, revenue, fixed, premioPaid, profit, roi:cost>0?profit/cost:0,
               be: be<=total ? be : null, days, beDays, day: daily>0 ? day : null, leftover, endCash, withdraw, next, cum, names:P.map(p=>p.name)});
     cash = next;
     if(!isFinite(cash) || cash>1e15) break;
@@ -264,9 +287,15 @@ function renderProducts(){
   });
 }
 function updateFixedInfo(){
-  const m = monthlyFixed(), c = num(S.cuota);
-  let t = `Total mensual: <b>${money(m+c)}</b> (costos ${money(m)}${c>0?' + cuota '+money(c):''}).`;
-  if((m>0||c>0) && !(num(S.daily)>0)) t += ' <b style="color:var(--warn)">Escribe tus ventas diarias para que se descuenten de la ganancia.</b>';
+  const m = monthlyFixed(), c = num(S.cuota), pr = num(S.premio), min = num(S.premioMin), d = num(S.daily);
+  const U = S.products.reduce((a,p)=>a+Math.max(0,num(p.units)),0);
+  const G = S.products.reduce((a,p)=>a+Math.max(0,num(p.units))*num(p.price),0);
+  let t = `Costos fijos al mes: <b>${money(m+c)}</b> (adicionales ${money(m)}${c>0?' + cuota '+money(c):''})${pr>0?' + premio '+money(pr)+' si cumples la meta':''}.`;
+  if(pr>0 && d>0 && U>0){
+    const v = d*30*G/U, ok = v>=min-1e-6;
+    t += ` A ${d.toLocaleString('es-CO')} ventas por día vendes unos <b>${money(v)}</b> al mes: <b style="color:${ok?'var(--accent)':'var(--warn)'}">${ok?'cumples la meta del premio':'no llegas a la meta del premio'}</b>.`;
+  }
+  if((m>0||c>0||pr>0) && !(d>0)) t += ' <b style="color:var(--warn)">Escribe tus ventas diarias para que se descuenten de la ganancia.</b>';
   document.getElementById('fixedInfo').innerHTML = t;
 }
 function renderExtras(){
@@ -290,7 +319,7 @@ function updateProdInfo(){
 }
 function fillSettings(){
   $('currency').value = S.currency; $('shipUnit').value = S.shipUnit;
-  $('perSale').value = S.perSale||''; $('premio').value = S.premio||''; $('cuota').value = S.cuota||''; $('cuotasN').value = S.cuotasN; $('daily').value = S.daily||''; $('reinv').value = S.reinv; $('cycles').value = S.cycles; $('goal').value = S.goal;
+  $('perSale').value = S.perSale||''; $('premio').value = S.premio||''; $('premioMin').value = S.premioMin; $('cuota').value = S.cuota||''; $('cuotasN').value = S.cuotasN; $('daily').value = S.daily||''; $('reinv').value = S.reinv; $('cycles').value = S.cycles; $('goal').value = S.goal;
 }
 
 /* ---------- Render resultados ---------- */
@@ -303,7 +332,7 @@ function renderResults(){
   if(!rows.length){
     k.innerHTML = ''; st.className='story bad';
     st.innerHTML = '<p>Agrega al menos un producto con unidades para calcular.</p>';
-    $('tbl').innerHTML=''; $('chart').innerHTML=''; $('goalMsg').style.display='none';
+    $('tbl').innerHTML=''; $('chart').innerHTML=''; $('goalMsg').style.display='none'; $('premioCard').style.display='none';
     return;
   }
   const r = rows[0], good = r.profit>=0;
@@ -346,6 +375,15 @@ function renderResults(){
   $('tbl').innerHTML = t + '</tbody>';
 
   chart(rows);
+  const pc = $('premioCard'), mo = rows.months||[];
+  if(num(S.premio)>0 && mo.length){
+    const min = num(S.premioMin), shown = mo.slice(0,12);
+    $('premioTbl').innerHTML = '<thead><tr><th>Mes</th><th>Venta del mes</th><th>Meta</th><th>Premio</th></tr></thead><tbody>' +
+      shown.map(x=>`<tr><td>Mes ${x.m}</td><td>${money(x.sales)}</td><td>${min>0?money(min):'—'}</td><td class="${x.ok?'pos':'neg'}">${x.ok?'Se entrega '+money(num(S.premio)):'No se entrega · faltan '+money(min-x.sales)}</td></tr>`).join('') + '</tbody>';
+    const hit = mo.filter(x=>x.ok).length;
+    $('premioNote').textContent = `Se entrega en ${hit} de ${mo.length} meses calculados${mo.length>12?' (se muestran los primeros 12)':''}. Cuando la venta del mes supera la meta, ese mes sí pagas el premio.`;
+    pc.style.display = '';
+  }else pc.style.display = 'none';
   const tn = document.getElementById('stopNote');
   tn.style.display = rows.length<n ? 'block' : 'none';
   tn.textContent = rows.length<n ? `El cálculo se detiene en el ciclo ${rows.length}: después de pagar los costos, el dinero no alcanza para otra compra.` : '';
@@ -403,7 +441,7 @@ $('addProd').onclick = ()=>{
   save(); renderProducts(); renderResults();
   const ins = $('prods').querySelectorAll('input[data-f="name"]'); ins[ins.length-1].focus();
 };
-[['currency','currency'],['shipUnit','shipUnit'],['perSale','perSale'],['premio','premio'],['cuota','cuota'],['cuotasN','cuotasN'],['daily','daily'],['reinv','reinv'],['cycles','cycles'],['goal','goal']]
+[['currency','currency'],['shipUnit','shipUnit'],['perSale','perSale'],['premio','premio'],['premioMin','premioMin'],['cuota','cuota'],['cuotasN','cuotasN'],['daily','daily'],['reinv','reinv'],['cycles','cycles'],['goal','goal']]
  .forEach(([id,key])=>{ $(id).addEventListener('input', e=>{ S[key]=e.target.value; save(); renderResults(); }); });
 
 function download(name, text, type){
