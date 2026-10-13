@@ -1,0 +1,391 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Calculadora de Inversión</title>
+<style>
+:root{
+  --bg:#f5f5f7; --card:#fff; --ink:#1d1d1f; --mute:#6e6e73; --line:#e5e5ea;
+  --accent:#0a7d4f; --accent-soft:#e3f4ec; --warn:#b3261e; --warn-soft:#fdeceb; --field:#f5f5f7;
+}
+@media (prefers-color-scheme: dark){
+  :root{ --bg:#000; --card:#1c1c1e; --ink:#f5f5f7; --mute:#98989d; --line:#2c2c2e;
+    --accent:#32d583; --accent-soft:#12291f; --warn:#ff6961; --warn-soft:#3a1a18; --field:#2c2c2e; }
+}
+*{box-sizing:border-box}
+html{-webkit-text-size-adjust:100%}
+body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.45 -apple-system,BlinkMacSystemFont,"SF Pro Text","Segoe UI",Roboto,sans-serif}
+.wrap{max-width:1180px;margin:0 auto;padding:28px 16px 60px}
+h1{font-size:28px;letter-spacing:-.02em;margin:0 0 4px}
+.sub{color:var(--mute);margin:0 0 22px}
+.grid{display:grid;grid-template-columns:minmax(0,430px) minmax(0,1fr);gap:18px;align-items:start}
+@media (max-width:900px){.grid{grid-template-columns:1fr}}
+.card{background:var(--card);border-radius:18px;padding:18px;margin-bottom:18px;box-shadow:0 1px 2px rgba(0,0,0,.04)}
+.card h2{font-size:15px;margin:0 0 12px;letter-spacing:-.01em}
+label{display:block;font-size:12px;color:var(--mute);margin:0 0 4px}
+input,select{width:100%;font:inherit;color:var(--ink);background:var(--field);border:1px solid transparent;border-radius:10px;padding:9px 10px;outline:none}
+input:focus,select:focus{border-color:var(--accent)}
+.row2{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.field{margin-bottom:12px}
+.prod{border:1px solid var(--line);border-radius:14px;padding:12px;margin-bottom:10px}
+.prod .top{display:flex;gap:8px;align-items:center;margin-bottom:10px}
+.prod .top input{font-weight:600}
+.x{flex:none;width:34px;height:34px;border-radius:10px;border:0;background:var(--field);color:var(--mute);font-size:18px;cursor:pointer}
+.x:hover{color:var(--warn)}
+.row3{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
+.info{font-size:12px;color:var(--mute);margin-top:8px}
+.info b{color:var(--ink);font-weight:600}
+button.btn{font:inherit;font-weight:600;border:0;border-radius:10px;padding:9px 14px;cursor:pointer;background:var(--field);color:var(--ink)}
+button.btn.primary{background:var(--accent);color:#fff}
+@media (prefers-color-scheme: dark){button.btn.primary{color:#000}}
+.actions{display:flex;flex-wrap:wrap;gap:8px}
+.kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px}
+.kpi{background:var(--field);border-radius:14px;padding:12px}
+.kpi span{display:block;font-size:12px;color:var(--mute)}
+.kpi b{display:block;font-size:20px;letter-spacing:-.02em;margin-top:2px;word-break:break-word}
+.kpi.good b{color:var(--accent)} .kpi.bad b{color:var(--warn)}
+.story{background:var(--accent-soft);border-radius:14px;padding:14px;margin-top:12px;font-size:14px}
+.story.bad{background:var(--warn-soft)}
+.story p{margin:0 0 8px} .story p:last-child{margin:0}
+.tablewrap{overflow-x:auto;margin:0 -4px}
+table{border-collapse:collapse;width:100%;min-width:760px;font-size:13px}
+th,td{text-align:right;padding:9px 8px;border-bottom:1px solid var(--line);white-space:nowrap}
+th{font-size:11px;text-transform:uppercase;letter-spacing:.04em;color:var(--mute);font-weight:600}
+th:first-child,td:first-child{text-align:left}
+td.mix{text-align:left;white-space:normal;color:var(--mute);font-size:12px;min-width:160px}
+td.pos{color:var(--accent);font-weight:600} td.neg{color:var(--warn);font-weight:600}
+.chart{width:100%;height:auto;display:block}
+.note{font-size:12px;color:var(--mute);margin-top:10px}
+.saved{font-size:12px;color:var(--mute)}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>Calculadora de inversión</h1>
+  <p class="sub">Compra, venta y recompra: cuánto ganas con el primer lote y cuánto puedes comprar con ese dinero, ciclo tras ciclo.</p>
+
+  <div class="grid">
+    <!-- ENTRADAS -->
+    <div>
+      <div class="card">
+        <h2>1 · Productos</h2>
+        <div id="prods"></div>
+        <button class="btn" id="addProd">+ Agregar producto</button>
+      </div>
+
+      <div class="card">
+        <h2>2 · Costos y reglas</h2>
+        <div class="row2">
+          <div class="field"><label>Moneda</label>
+            <select id="currency">
+              <option value="COP">COP · Peso colombiano</option>
+              <option value="USD">USD · Dólar</option>
+              <option value="MXN">MXN · Peso mexicano</option>
+              <option value="EUR">EUR · Euro</option>
+              <option value="PEN">PEN · Sol</option>
+              <option value="CLP">CLP · Peso chileno</option>
+              <option value="ARS">ARS · Peso argentino</option>
+            </select>
+          </div>
+          <div class="field"><label>Costo de envío de la compra (total)</label><input id="shipping" type="number" min="0" step="any" inputmode="decimal"></div>
+        </div>
+        <div class="field"><label>Cuando recompras, el envío…</label>
+          <select id="shipMode">
+            <option value="prop">crece con las unidades (proporcional)</option>
+            <option value="fixed">es el mismo por cada compra (fijo)</option>
+          </select>
+        </div>
+        <div class="row2">
+          <div class="field"><label>Gasto por unidad vendida (opcional)</label><input id="perSale" type="number" min="0" step="any" inputmode="decimal" placeholder="Envío al cliente, comisión…"></div>
+          <div class="field"><label>% de la ganancia que reinviertes</label><input id="reinv" type="number" min="0" max="100" step="1" inputmode="decimal"></div>
+        </div>
+        <div class="row2">
+          <div class="field"><label>Ciclos de recompra a calcular</label><input id="cycles" type="number" min="1" max="36" step="1" inputmode="numeric"></div>
+          <div class="field"><label>Meta de capital (opcional)</label><input id="goal" type="number" min="0" step="any" inputmode="decimal" placeholder="Ej: 10000000"></div>
+        </div>
+      </div>
+
+      <div class="card">
+        <h2>Guardar y compartir</h2>
+        <div class="actions">
+          <button class="btn" id="exportJson">Descargar respaldo</button>
+          <button class="btn" id="importJson">Cargar respaldo</button>
+          <button class="btn" id="exportCsv">Descargar CSV</button>
+          <button class="btn" id="reset">Limpiar todo</button>
+        </div>
+        <input type="file" id="file" accept="application/json" hidden>
+        <p class="saved" style="margin:10px 0 0">Todo se guarda solo en este navegador. Usa el respaldo para llevarlo a otro equipo.</p>
+      </div>
+    </div>
+
+    <!-- RESULTADOS -->
+    <div>
+      <div class="card">
+        <h2>Primer lote</h2>
+        <div class="kpis" id="kpis"></div>
+        <div class="story" id="story"></div>
+      </div>
+
+      <div class="card">
+        <h2>Recompra ciclo a ciclo</h2>
+        <div class="tablewrap"><table id="tbl"></table></div>
+        <p class="note">En cada ciclo se compra la misma mezcla de productos, en la proporción de tu primer lote, con todo el dinero disponible (unidades enteras; lo que sobra pasa al siguiente ciclo).</p>
+      </div>
+
+      <div class="card">
+        <h2>Capital al terminar cada ciclo</h2>
+        <div id="chart"></div>
+        <p class="story" id="goalMsg" style="display:none;margin-top:12px"></p>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+const KEY = 'calc-inversion-v1';
+const DEFAULT = {
+  currency:'COP',
+  products:[
+    {name:'Producto A', cost:25000, price:60000, units:20},
+    {name:'Producto B', cost:15000, price:40000, units:10}
+  ],
+  shipping:80000, shipMode:'prop', perSale:0, reinv:100, cycles:6, goal:''
+};
+let S = load();
+
+function load(){
+  try{ const r = JSON.parse(localStorage.getItem(KEY)); if(r && Array.isArray(r.products)) return Object.assign({}, DEFAULT, r); }catch(e){}
+  return JSON.parse(JSON.stringify(DEFAULT));
+}
+function save(){ try{ localStorage.setItem(KEY, JSON.stringify(S)); }catch(e){} }
+
+const $ = id => document.getElementById(id);
+const num = v => { const n = parseFloat(v); return isFinite(n) ? n : 0; };
+
+function money(n){
+  if(!isFinite(n)) return '—';
+  const dec = ['COP','CLP','ARS'].includes(S.currency) ? 0 : 2;
+  try{ return new Intl.NumberFormat('es-CO',{style:'currency',currency:S.currency,minimumFractionDigits:dec,maximumFractionDigits:dec}).format(n); }
+  catch(e){ return Math.round(n).toLocaleString('es-CO'); }
+}
+function compact(n){
+  if(!isFinite(n)) return '—';
+  try{ return new Intl.NumberFormat('es-CO',{notation:'compact',maximumFractionDigits:1}).format(n); }
+  catch(e){ return String(Math.round(n)); }
+}
+const int = n => isFinite(n) ? Math.round(n).toLocaleString('es-CO') : '—';
+const pct = n => isFinite(n) ? (n*100).toLocaleString('es-CO',{maximumFractionDigits:1})+'%' : '—';
+const esc = s => String(s).replace(/[&<>"]/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+
+/* ---------- Simulación ---------- */
+function simulate(n){
+  const P = S.products.map(p=>({name:p.name||'Producto', cost:num(p.cost), price:num(p.price), units:Math.max(0,Math.floor(num(p.units)))}));
+  const U1 = P.reduce((a,p)=>a+p.units,0);
+  const prodCost1 = P.reduce((a,p)=>a+p.cost*p.units,0);
+  const ship = num(S.shipping), perSale = num(S.perSale);
+  const reinv = Math.min(100,Math.max(0,num(S.reinv)))/100;
+  const out = [];
+  if(U1===0) return out;
+  let cash = prodCost1 + ship, cum = 0;
+  for(let k=1;k<=n;k++){
+    let units;
+    if(k===1) units = P.map(p=>p.units);
+    else{
+      const m = S.shipMode==='fixed' ? (prodCost1>0 ? (cash-ship)/prodCost1 : 0) : ((prodCost1+ship)>0 ? cash/(prodCost1+ship) : 0);
+      if(!(m>0) || !isFinite(m)) break;
+      units = P.map(p=>Math.floor(p.units*m));
+    }
+    const total = units.reduce((a,b)=>a+b,0);
+    if(total===0) break;
+    const prodCost = P.reduce((a,p,i)=>a+p.cost*units[i],0);
+    const shipK = S.shipMode==='fixed' ? ship : ship*total/U1;
+    const cost = prodCost + shipK;
+    if(k>1 && cost>cash+1e-6) break;
+    const revenue = P.reduce((a,p,i)=>a+p.price*units[i],0) - perSale*total;
+    const profit = revenue - cost;
+    const netUnit = revenue/total;
+    const be = netUnit>0 ? Math.ceil(cost/netUnit - 1e-9) : Infinity;
+    const leftover = cash - cost;
+    const endCash = leftover + revenue;
+    const withdraw = profit>0 ? profit*(1-reinv) : 0;
+    const next = endCash - withdraw;
+    cum += profit;
+    out.push({k, capital:cash, units, total, cost, shipK, revenue, profit, roi:cost>0?profit/cost:0,
+              be: be<=total ? be : null, leftover, endCash, withdraw, next, cum, names:P.map(p=>p.name)});
+    cash = next;
+    if(!isFinite(cash) || cash>1e15) break;
+  }
+  return out;
+}
+
+/* ---------- Render entradas ---------- */
+function renderProducts(){
+  const el = $('prods'); el.innerHTML = '';
+  S.products.forEach((p,i)=>{
+    const d = document.createElement('div'); d.className='prod';
+    d.innerHTML = `
+      <div class="top">
+        <input data-i="${i}" data-f="name" value="${esc(p.name)}" placeholder="Nombre del producto">
+        <button class="x" data-del="${i}" title="Quitar" aria-label="Quitar producto">×</button>
+      </div>
+      <div class="row3">
+        <div><label>Costo unitario</label><input type="number" min="0" step="any" inputmode="decimal" data-i="${i}" data-f="cost" value="${p.cost}"></div>
+        <div><label>Precio de venta</label><input type="number" min="0" step="any" inputmode="decimal" data-i="${i}" data-f="price" value="${p.price}"></div>
+        <div><label>Unidades</label><input type="number" min="0" step="1" inputmode="numeric" data-i="${i}" data-f="units" value="${p.units}"></div>
+      </div>
+      <div class="info" id="pi${i}"></div>`;
+    el.appendChild(d);
+  });
+}
+function updateProdInfo(){
+  const U = S.products.reduce((a,p)=>a+Math.max(0,num(p.units)),0);
+  const ship = num(S.shipping);
+  S.products.forEach((p,i)=>{
+    const el = $('pi'+i); if(!el) return;
+    const c = num(p.cost), pr = num(p.price), u = num(p.units);
+    const real = c + (U>0 ? ship/U : 0) + num(S.perSale);
+    const gain = pr - real;
+    el.innerHTML = `Costo real c/ envío: <b>${money(c + (U>0?ship/U:0))}</b> · Ganancia por unidad: <b style="color:${gain>=0?'var(--accent)':'var(--warn)'}">${money(gain)}</b> (${real>0?pct(gain/real):'—'}) · Inversión: <b>${money(c*u)}</b>`;
+  });
+}
+function fillSettings(){
+  $('currency').value = S.currency; $('shipping').value = S.shipping; $('shipMode').value = S.shipMode;
+  $('perSale').value = S.perSale||''; $('reinv').value = S.reinv; $('cycles').value = S.cycles; $('goal').value = S.goal;
+}
+
+/* ---------- Render resultados ---------- */
+function renderResults(){
+  updateProdInfo();
+  const n = Math.min(36,Math.max(1,Math.floor(num(S.cycles))||1));
+  const rows = simulate(n);
+  const k = $('kpis'), st = $('story');
+
+  if(!rows.length){
+    k.innerHTML = ''; st.className='story bad';
+    st.innerHTML = '<p>Agrega al menos un producto con unidades para calcular.</p>';
+    $('tbl').innerHTML=''; $('chart').innerHTML=''; $('goalMsg').style.display='none';
+    return;
+  }
+  const r = rows[0], good = r.profit>=0;
+  k.innerHTML = `
+    <div class="kpi"><span>Inversión (con envío)</span><b>${money(r.cost)}</b></div>
+    <div class="kpi"><span>Ingreso si vendes todo</span><b>${money(r.revenue)}</b></div>
+    <div class="kpi ${good?'good':'bad'}"><span>Ganancia neta</span><b>${money(r.profit)}</b></div>
+    <div class="kpi ${good?'good':'bad'}"><span>Retorno (ROI)</span><b>${pct(r.roi)}</b></div>
+    <div class="kpi"><span>Unidades compradas</span><b>${int(r.total)}</b></div>
+    <div class="kpi"><span>Vender para recuperar</span><b>${r.be===null?'No alcanza':int(r.be)+' uds'}</b></div>`;
+
+  let html = '';
+  if(r.be===null){
+    st.className='story bad';
+    html = `<p>Con estos precios <b>no recuperas la inversión</b> aunque vendas todo el lote. Revisa costos, envío o precio de venta.</p>`;
+  }else{
+    st.className='story';
+    html = `<p>Necesitas vender <b>${int(r.be)} de ${int(r.total)} unidades</b> (${pct(r.be/r.total)} del lote) para recuperar los ${money(r.cost)} invertidos y poder volver a comprar.</p>`;
+    if(r.total-r.be>0) html += `<p>Las otras <b>${int(r.total-r.be)} unidades</b> son ganancia pura.</p>`;
+    if(rows[1]){
+      const q = rows[1];
+      html += `<p>Si vendes todo, tendrás <b>${money(r.endCash)}</b> y en el ciclo 2 puedes comprar <b>${int(q.total)} unidades</b> (${(q.total/r.total).toLocaleString('es-CO',{maximumFractionDigits:2})}× el primer lote).</p>`;
+    }
+  }
+  st.innerHTML = html;
+
+  // tabla
+  let t = `<thead><tr><th>Ciclo</th><th>Capital</th><th>Unidades</th><th>Inversión</th><th>Ingreso</th><th>Ganancia</th><th>Vender p/ recuperar</th><th>Capital siguiente</th><th>Ganancia acum.</th><th style="text-align:left">Compras por producto</th></tr></thead><tbody>`;
+  rows.forEach(c=>{
+    const mix = c.units.map((u,i)=>`${esc(c.names[i])} ×${int(u)}`).join(' · ');
+    t += `<tr><td>${c.k}</td><td>${money(c.capital)}</td><td>${int(c.total)}</td><td>${money(c.cost)}</td><td>${money(c.revenue)}</td>
+      <td class="${c.profit>=0?'pos':'neg'}">${money(c.profit)}</td><td>${c.be===null?'—':int(c.be)+' uds'}</td>
+      <td>${money(c.next)}</td><td>${money(c.cum)}</td><td class="mix">${mix}</td></tr>`;
+  });
+  $('tbl').innerHTML = t + '</tbody>';
+
+  chart(rows);
+
+  // meta
+  const gm = $('goalMsg'), goal = num(S.goal);
+  if(goal>0){
+    const long = simulate(120);
+    const hit = long.find(c=>c.endCash>=goal);
+    gm.style.display='block';
+    if(hit){ gm.className='story'; gm.innerHTML = `Llegas a tu meta de <b>${money(goal)}</b> en el <b>ciclo ${hit.k}</b> (capital ${money(hit.endCash)}).`; }
+    else{ gm.className='story bad'; gm.innerHTML = `Con estas cifras no alcanzas ${money(goal)} en 120 ciclos.`; }
+  }else gm.style.display='none';
+}
+
+function chart(rows){
+  const W=640,H=230,pl=10,pr=10,pt=24,pb=30;
+  const vals = rows.map(r=>r.endCash), max = Math.max(...vals,1);
+  const bw = (W-pl-pr)/rows.length;
+  let g = '';
+  rows.forEach((r,i)=>{
+    const h = Math.max(2,(r.endCash/max)*(H-pt-pb)), x = pl+i*bw+bw*.15, w = bw*.7, y = H-pb-h;
+    g += `<rect x="${x}" y="${y}" width="${w}" height="${h}" rx="6" fill="var(--accent)" opacity="${.45+.55*(i+1)/rows.length}"/>
+          <text x="${x+w/2}" y="${y-6}" text-anchor="middle" font-size="11" fill="var(--ink)">${compact(r.endCash)}</text>
+          <text x="${x+w/2}" y="${H-10}" text-anchor="middle" font-size="11" fill="var(--mute)">C${r.k}</text>`;
+  });
+  $('chart').innerHTML = `<svg class="chart" viewBox="0 0 ${W} ${H}" role="img" aria-label="Capital al terminar cada ciclo">${g}</svg>`;
+}
+
+/* ---------- Eventos ---------- */
+$('prods').addEventListener('input', e=>{
+  const t = e.target, i = t.dataset.i; if(i===undefined) return;
+  const f = t.dataset.f;
+  S.products[i][f] = f==='name' ? t.value : t.value;
+  save(); renderResults();
+});
+$('prods').addEventListener('click', e=>{
+  const b = e.target.closest('[data-del]'); if(!b) return;
+  S.products.splice(+b.dataset.del,1); save(); renderProducts(); renderResults();
+});
+$('addProd').onclick = ()=>{
+  S.products.push({name:'Producto '+(S.products.length+1), cost:0, price:0, units:0});
+  save(); renderProducts(); renderResults();
+  const ins = $('prods').querySelectorAll('input[data-f="name"]'); ins[ins.length-1].focus();
+};
+[['currency','currency'],['shipping','shipping'],['shipMode','shipMode'],['perSale','perSale'],['reinv','reinv'],['cycles','cycles'],['goal','goal']]
+ .forEach(([id,key])=>{ $(id).addEventListener('input', e=>{ S[key]=e.target.value; save(); renderResults(); }); });
+
+function download(name, text, type){
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob([text],{type}));
+  a.download = name; document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(()=>URL.revokeObjectURL(a.href),1000);
+}
+$('exportJson').onclick = ()=>download('calculadora-inversion.json', JSON.stringify(S,null,2), 'application/json');
+$('importJson').onclick = ()=>$('file').click();
+$('file').onchange = e=>{
+  const f = e.target.files[0]; if(!f) return;
+  const rd = new FileReader();
+  rd.onload = ()=>{
+    try{
+      const d = JSON.parse(rd.result);
+      if(!Array.isArray(d.products)) throw 0;
+      S = Object.assign({}, DEFAULT, d); save(); fillSettings(); renderProducts(); renderResults();
+    }catch(err){ alert('El archivo no es un respaldo válido.'); }
+  };
+  rd.readAsText(f); e.target.value='';
+};
+$('exportCsv').onclick = ()=>{
+  const n = Math.min(36,Math.max(1,Math.floor(num(S.cycles))||1));
+  const rows = simulate(n);
+  const h = ['Ciclo','Capital','Unidades','Inversion','Ingreso','Ganancia','ROI','Vender para recuperar','Capital siguiente','Ganancia acumulada','Compras por producto'];
+  const q = v => '"'+String(v).replace(/"/g,'""')+'"';
+  const lines = [h.map(q).join(',')].concat(rows.map(c=>[
+    c.k, Math.round(c.capital), c.total, Math.round(c.cost), Math.round(c.revenue), Math.round(c.profit),
+    (c.roi*100).toFixed(1)+'%', c.be===null?'':c.be, Math.round(c.next), Math.round(c.cum),
+    c.units.map((u,i)=>c.names[i]+' x'+u).join(' | ')
+  ].map(q).join(',')));
+  download('recompra.csv', '﻿'+lines.join('\n'), 'text/csv;charset=utf-8');
+};
+$('reset').onclick = ()=>{
+  if(!confirm('¿Borrar todos los datos y empezar de cero?')) return;
+  S = JSON.parse(JSON.stringify(DEFAULT)); S.products=[{name:'Producto 1',cost:0,price:0,units:0}]; S.shipping=0;
+  save(); fillSettings(); renderProducts(); renderResults();
+};
+
+fillSettings(); renderProducts(); renderResults();
+</script>
+</body>
+</html>
