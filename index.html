@@ -88,13 +88,7 @@ td.pos{color:var(--accent);font-weight:600} td.neg{color:var(--warn);font-weight
               <option value="ARS">ARS · Peso argentino</option>
             </select>
           </div>
-          <div class="field"><label>Costo de envío de la compra (total)</label><input id="shipping" type="number" min="0" step="any" inputmode="decimal"></div>
-        </div>
-        <div class="field"><label>Cuando recompras, el envío…</label>
-          <select id="shipMode">
-            <option value="prop">crece con las unidades (proporcional)</option>
-            <option value="fixed">es el mismo por cada compra (fijo)</option>
-          </select>
+          <div class="field"><label>Costo de envío por unidad</label><input id="shipUnit" type="number" min="0" step="any" inputmode="decimal"></div>
         </div>
         <div class="row2">
           <div class="field"><label>Gasto por unidad vendida (opcional)</label><input id="perSale" type="number" min="0" step="any" inputmode="decimal" placeholder="Envío al cliente, comisión…"></div>
@@ -151,7 +145,7 @@ const DEFAULT = {
     {name:'Producto A', cost:25000, price:60000, units:20},
     {name:'Producto B', cost:15000, price:40000, units:10}
   ],
-  shipping:80000, shipMode:'prop', perSale:0, daily:5, reinv:100, cycles:6, goal:''
+  shipUnit:3000, perSale:0, daily:5, reinv:100, cycles:6, goal:''
 };
 let S = load();
 
@@ -185,23 +179,23 @@ function simulate(n){
   const P = S.products.map(p=>({name:p.name||'Producto', cost:num(p.cost), price:num(p.price), units:Math.max(0,Math.floor(num(p.units)))}));
   const U1 = P.reduce((a,p)=>a+p.units,0);
   const prodCost1 = P.reduce((a,p)=>a+p.cost*p.units,0);
-  const ship = num(S.shipping), perSale = num(S.perSale), daily = num(S.daily);
+  const shipU = num(S.shipUnit), perSale = num(S.perSale), daily = num(S.daily);
   const reinv = Math.min(100,Math.max(0,num(S.reinv)))/100;
   const out = [];
   if(U1===0) return out;
-  let cash = prodCost1 + ship, cum = 0, day = 0;
+  let cash = prodCost1 + shipU*U1, cum = 0, day = 0;
   for(let k=1;k<=n;k++){
     let units;
     if(k===1) units = P.map(p=>p.units);
     else{
-      const m = S.shipMode==='fixed' ? (prodCost1>0 ? (cash-ship)/prodCost1 : 0) : ((prodCost1+ship)>0 ? cash/(prodCost1+ship) : 0);
+      const m = (prodCost1+shipU*U1)>0 ? cash/(prodCost1+shipU*U1) : 0;
       if(!(m>0) || !isFinite(m)) break;
       units = P.map(p=>Math.floor(p.units*m));
     }
     const total = units.reduce((a,b)=>a+b,0);
     if(total===0) break;
     const prodCost = P.reduce((a,p,i)=>a+p.cost*units[i],0);
-    const shipK = S.shipMode==='fixed' ? ship : ship*total/U1;
+    const shipK = shipU*total;
     const cost = prodCost + shipK;
     if(k>1 && cost>cash+1e-6) break;
     const revenue = P.reduce((a,p,i)=>a+p.price*units[i],0) - perSale*total;
@@ -244,18 +238,17 @@ function renderProducts(){
   });
 }
 function updateProdInfo(){
-  const U = S.products.reduce((a,p)=>a+Math.max(0,num(p.units)),0);
-  const ship = num(S.shipping);
+  const ship = num(S.shipUnit);
   S.products.forEach((p,i)=>{
     const el = $('pi'+i); if(!el) return;
     const c = num(p.cost), pr = num(p.price), u = num(p.units);
-    const real = c + (U>0 ? ship/U : 0) + num(S.perSale);
+    const real = c + ship + num(S.perSale);
     const gain = pr - real;
-    el.innerHTML = `Costo real c/ envío: <b>${money(c + (U>0?ship/U:0))}</b> · Ganancia por unidad: <b style="color:${gain>=0?'var(--accent)':'var(--warn)'}">${money(gain)}</b> (${real>0?pct(gain/real):'—'}) · Inversión: <b>${money(c*u)}</b>`;
+    el.innerHTML = `Costo real c/ envío: <b>${money(c + ship)}</b> · Ganancia por unidad: <b style="color:${gain>=0?'var(--accent)':'var(--warn)'}">${money(gain)}</b> (${real>0?pct(gain/real):'—'}) · Inversión: <b>${money(c*u)}</b>`;
   });
 }
 function fillSettings(){
-  $('currency').value = S.currency; $('shipping').value = S.shipping; $('shipMode').value = S.shipMode;
+  $('currency').value = S.currency; $('shipUnit').value = S.shipUnit;
   $('perSale').value = S.perSale||''; $('daily').value = S.daily||''; $('reinv').value = S.reinv; $('cycles').value = S.cycles; $('goal').value = S.goal;
 }
 
@@ -352,7 +345,7 @@ $('addProd').onclick = ()=>{
   save(); renderProducts(); renderResults();
   const ins = $('prods').querySelectorAll('input[data-f="name"]'); ins[ins.length-1].focus();
 };
-[['currency','currency'],['shipping','shipping'],['shipMode','shipMode'],['perSale','perSale'],['daily','daily'],['reinv','reinv'],['cycles','cycles'],['goal','goal']]
+[['currency','currency'],['shipUnit','shipUnit'],['perSale','perSale'],['daily','daily'],['reinv','reinv'],['cycles','cycles'],['goal','goal']]
  .forEach(([id,key])=>{ $(id).addEventListener('input', e=>{ S[key]=e.target.value; save(); renderResults(); }); });
 
 function download(name, text, type){
@@ -389,7 +382,7 @@ $('exportCsv').onclick = ()=>{
 };
 $('reset').onclick = ()=>{
   if(!confirm('¿Borrar todos los datos y empezar de cero?')) return;
-  S = JSON.parse(JSON.stringify(DEFAULT)); S.products=[{name:'Producto 1',cost:0,price:0,units:0}]; S.shipping=0;
+  S = JSON.parse(JSON.stringify(DEFAULT)); S.products=[{name:'Producto 1',cost:0,price:0,units:0}]; S.shipUnit=0;
   save(); fillSettings(); renderProducts(); renderResults();
 };
 
