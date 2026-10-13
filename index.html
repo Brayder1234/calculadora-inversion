@@ -49,7 +49,7 @@ button.btn.primary{background:var(--accent);color:#fff}
 .story.bad{background:var(--warn-soft)}
 .story p{margin:0 0 8px} .story p:last-child{margin:0}
 .tablewrap{overflow-x:auto;margin:0 -4px}
-table{border-collapse:collapse;width:100%;min-width:760px;font-size:13px}
+table{border-collapse:collapse;width:100%;min-width:980px;font-size:13px}
 th,td{text-align:right;padding:9px 8px;border-bottom:1px solid var(--line);white-space:nowrap}
 th{font-size:11px;text-transform:uppercase;letter-spacing:.04em;color:var(--mute);font-weight:600}
 th:first-child,td:first-child{text-align:left}
@@ -100,6 +100,7 @@ td.pos{color:var(--accent);font-weight:600} td.neg{color:var(--warn);font-weight
           <div class="field"><label>Gasto por unidad vendida (opcional)</label><input id="perSale" type="number" min="0" step="any" inputmode="decimal" placeholder="Envío al cliente, comisión…"></div>
           <div class="field"><label>% de la ganancia que reinviertes</label><input id="reinv" type="number" min="0" max="100" step="1" inputmode="decimal"></div>
         </div>
+        <div class="field"><label>Ventas diarias (unidades que vendes por día)</label><input id="daily" type="number" min="0" step="any" inputmode="decimal" placeholder="Ej: 5"></div>
         <div class="row2">
           <div class="field"><label>Ciclos de recompra a calcular</label><input id="cycles" type="number" min="1" max="36" step="1" inputmode="numeric"></div>
           <div class="field"><label>Meta de capital (opcional)</label><input id="goal" type="number" min="0" step="any" inputmode="decimal" placeholder="Ej: 10000000"></div>
@@ -150,7 +151,7 @@ const DEFAULT = {
     {name:'Producto A', cost:25000, price:60000, units:20},
     {name:'Producto B', cost:15000, price:40000, units:10}
   ],
-  shipping:80000, shipMode:'prop', perSale:0, reinv:100, cycles:6, goal:''
+  shipping:80000, shipMode:'prop', perSale:0, daily:5, reinv:100, cycles:6, goal:''
 };
 let S = load();
 
@@ -175,6 +176,7 @@ function compact(n){
   catch(e){ return String(Math.round(n)); }
 }
 const int = n => isFinite(n) ? Math.round(n).toLocaleString('es-CO') : '—';
+const dias = n => n===null||!isFinite(n) ? '—' : (n<10 ? n.toLocaleString('es-CO',{maximumFractionDigits:1}) : Math.ceil(n).toLocaleString('es-CO'))+(Math.round(n*10)/10===1?' día':' días');
 const pct = n => isFinite(n) ? (n*100).toLocaleString('es-CO',{maximumFractionDigits:1})+'%' : '—';
 const esc = s => String(s).replace(/[&<>"]/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 
@@ -183,11 +185,11 @@ function simulate(n){
   const P = S.products.map(p=>({name:p.name||'Producto', cost:num(p.cost), price:num(p.price), units:Math.max(0,Math.floor(num(p.units)))}));
   const U1 = P.reduce((a,p)=>a+p.units,0);
   const prodCost1 = P.reduce((a,p)=>a+p.cost*p.units,0);
-  const ship = num(S.shipping), perSale = num(S.perSale);
+  const ship = num(S.shipping), perSale = num(S.perSale), daily = num(S.daily);
   const reinv = Math.min(100,Math.max(0,num(S.reinv)))/100;
   const out = [];
   if(U1===0) return out;
-  let cash = prodCost1 + ship, cum = 0;
+  let cash = prodCost1 + ship, cum = 0, day = 0;
   for(let k=1;k<=n;k++){
     let units;
     if(k===1) units = P.map(p=>p.units);
@@ -211,8 +213,11 @@ function simulate(n){
     const withdraw = profit>0 ? profit*(1-reinv) : 0;
     const next = endCash - withdraw;
     cum += profit;
+    const days = daily>0 ? total/daily : null;
+    const beDays = daily>0 && be<=total ? be/daily : null;
+    if(days!==null) day += days;
     out.push({k, capital:cash, units, total, cost, shipK, revenue, profit, roi:cost>0?profit/cost:0,
-              be: be<=total ? be : null, leftover, endCash, withdraw, next, cum, names:P.map(p=>p.name)});
+              be: be<=total ? be : null, days, beDays, day: daily>0 ? day : null, leftover, endCash, withdraw, next, cum, names:P.map(p=>p.name)});
     cash = next;
     if(!isFinite(cash) || cash>1e15) break;
   }
@@ -251,7 +256,7 @@ function updateProdInfo(){
 }
 function fillSettings(){
   $('currency').value = S.currency; $('shipping').value = S.shipping; $('shipMode').value = S.shipMode;
-  $('perSale').value = S.perSale||''; $('reinv').value = S.reinv; $('cycles').value = S.cycles; $('goal').value = S.goal;
+  $('perSale').value = S.perSale||''; $('daily').value = S.daily||''; $('reinv').value = S.reinv; $('cycles').value = S.cycles; $('goal').value = S.goal;
 }
 
 /* ---------- Render resultados ---------- */
@@ -274,7 +279,9 @@ function renderResults(){
     <div class="kpi ${good?'good':'bad'}"><span>Ganancia neta</span><b>${money(r.profit)}</b></div>
     <div class="kpi ${good?'good':'bad'}"><span>Retorno (ROI)</span><b>${pct(r.roi)}</b></div>
     <div class="kpi"><span>Unidades compradas</span><b>${int(r.total)}</b></div>
-    <div class="kpi"><span>Vender para recuperar</span><b>${r.be===null?'No alcanza':int(r.be)+' uds'}</b></div>`;
+    <div class="kpi"><span>Vender para recuperar</span><b>${r.be===null?'No alcanza':int(r.be)+' uds'}</b></div>
+    ${r.days!==null?`<div class="kpi"><span>Días para recuperar</span><b>${r.beDays===null?'—':dias(r.beDays)}</b></div>
+    <div class="kpi"><span>Días para vender todo</span><b>${dias(r.days)}</b></div>`:''}`;
 
   let html = '';
   if(r.be===null){
@@ -283,6 +290,7 @@ function renderResults(){
   }else{
     st.className='story';
     html = `<p>Necesitas vender <b>${int(r.be)} de ${int(r.total)} unidades</b> (${pct(r.be/r.total)} del lote) para recuperar los ${money(r.cost)} invertidos y poder volver a comprar.</p>`;
+    if(r.beDays!==null) html += `<p>A ${int(num(S.daily))===num(S.daily)?int(num(S.daily)):num(S.daily).toLocaleString('es-CO')} ventas por día, recuperas la inversión en <b>${dias(r.beDays)}</b> y vendes todo el lote en <b>${dias(r.days)}</b>.</p>`;
     if(r.total-r.be>0) html += `<p>Las otras <b>${int(r.total-r.be)} unidades</b> son ganancia pura.</p>`;
     if(rows[1]){
       const q = rows[1];
@@ -292,12 +300,12 @@ function renderResults(){
   st.innerHTML = html;
 
   // tabla
-  let t = `<thead><tr><th>Ciclo</th><th>Capital</th><th>Unidades</th><th>Inversión</th><th>Ingreso</th><th>Ganancia</th><th>Vender p/ recuperar</th><th>Capital siguiente</th><th>Ganancia acum.</th><th style="text-align:left">Compras por producto</th></tr></thead><tbody>`;
+  let t = `<thead><tr><th>Ciclo</th><th>Capital</th><th>Unidades</th><th>Inversión</th><th>Ingreso</th><th>Ganancia</th><th>Vender p/ recuperar</th><th>Capital siguiente</th><th>Ganancia acum.</th><th>Duración</th><th>Día fin</th><th style="text-align:left">Compras por producto</th></tr></thead><tbody>`;
   rows.forEach(c=>{
     const mix = c.units.map((u,i)=>`${esc(c.names[i])} ×${int(u)}`).join(' · ');
     t += `<tr><td>${c.k}</td><td>${money(c.capital)}</td><td>${int(c.total)}</td><td>${money(c.cost)}</td><td>${money(c.revenue)}</td>
       <td class="${c.profit>=0?'pos':'neg'}">${money(c.profit)}</td><td>${c.be===null?'—':int(c.be)+' uds'}</td>
-      <td>${money(c.next)}</td><td>${money(c.cum)}</td><td class="mix">${mix}</td></tr>`;
+      <td>${money(c.next)}</td><td>${money(c.cum)}</td><td>${dias(c.days)}</td><td>${c.day===null?'—':'Día '+Math.ceil(c.day)}</td><td class="mix">${mix}</td></tr>`;
   });
   $('tbl').innerHTML = t + '</tbody>';
 
@@ -309,7 +317,7 @@ function renderResults(){
     const long = simulate(120);
     const hit = long.find(c=>c.endCash>=goal);
     gm.style.display='block';
-    if(hit){ gm.className='story'; gm.innerHTML = `Llegas a tu meta de <b>${money(goal)}</b> en el <b>ciclo ${hit.k}</b> (capital ${money(hit.endCash)}).`; }
+    if(hit){ gm.className='story'; gm.innerHTML = `Llegas a tu meta de <b>${money(goal)}</b> en el <b>ciclo ${hit.k}</b> (capital ${money(hit.endCash)})${hit.day!==null?`, aproximadamente al <b>día ${Math.ceil(hit.day)}</b> (${dias(hit.day)}, unos ${(hit.day/30).toLocaleString('es-CO',{maximumFractionDigits:1})} meses)`:''}.`; }
     else{ gm.className='story bad'; gm.innerHTML = `Con estas cifras no alcanzas ${money(goal)} en 120 ciclos.`; }
   }else gm.style.display='none';
 }
@@ -344,7 +352,7 @@ $('addProd').onclick = ()=>{
   save(); renderProducts(); renderResults();
   const ins = $('prods').querySelectorAll('input[data-f="name"]'); ins[ins.length-1].focus();
 };
-[['currency','currency'],['shipping','shipping'],['shipMode','shipMode'],['perSale','perSale'],['reinv','reinv'],['cycles','cycles'],['goal','goal']]
+[['currency','currency'],['shipping','shipping'],['shipMode','shipMode'],['perSale','perSale'],['daily','daily'],['reinv','reinv'],['cycles','cycles'],['goal','goal']]
  .forEach(([id,key])=>{ $(id).addEventListener('input', e=>{ S[key]=e.target.value; save(); renderResults(); }); });
 
 function download(name, text, type){
@@ -370,11 +378,11 @@ $('file').onchange = e=>{
 $('exportCsv').onclick = ()=>{
   const n = Math.min(36,Math.max(1,Math.floor(num(S.cycles))||1));
   const rows = simulate(n);
-  const h = ['Ciclo','Capital','Unidades','Inversion','Ingreso','Ganancia','ROI','Vender para recuperar','Capital siguiente','Ganancia acumulada','Compras por producto'];
+  const h = ['Ciclo','Capital','Unidades','Inversion','Ingreso','Ganancia','ROI','Vender para recuperar','Capital siguiente','Ganancia acumulada','Dias del ciclo','Dia de cierre','Compras por producto'];
   const q = v => '"'+String(v).replace(/"/g,'""')+'"';
   const lines = [h.map(q).join(',')].concat(rows.map(c=>[
     c.k, Math.round(c.capital), c.total, Math.round(c.cost), Math.round(c.revenue), Math.round(c.profit),
-    (c.roi*100).toFixed(1)+'%', c.be===null?'':c.be, Math.round(c.next), Math.round(c.cum),
+    (c.roi*100).toFixed(1)+'%', c.be===null?'':c.be, Math.round(c.next), Math.round(c.cum), c.days===null?'':c.days.toFixed(1), c.day===null?'':Math.ceil(c.day),
     c.units.map((u,i)=>c.names[i]+' x'+u).join(' | ')
   ].map(q).join(',')));
   download('recompra.csv', '﻿'+lines.join('\n'), 'text/csv;charset=utf-8');
